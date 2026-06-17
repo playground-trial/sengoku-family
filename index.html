@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>动态时间轴天皇族谱</title>
+    <!-- 引入图表库 -->
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style>
+        body { margin: 0; background: #1e1e2f; font-family: 'Helvetica Neue', Arial, sans-serif; color: #fff; overflow: hidden; }
+        
+        /* 族谱画布 */
+        #mynetwork { width: 100vw; height: 100vh; }
+        
+        /* 侧边故事面板 */
+        #story-panel { 
+            position: fixed; right: 20px; top: 20px; width: 320px; 
+            background: rgba(40, 42, 54, 0.95); padding: 20px; 
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5); border-radius: 12px; 
+            display: none; border: 1px solid #444; z-index: 100;
+        }
+        h3 { margin-top: 0; border-bottom: 2px solid #ff79c6; padding-bottom: 10px; color: #ff79c6; }
+        .close-btn { float: right; cursor: pointer; color: #aaa; font-size: 18px; }
+        .close-btn:hover { color: #fff; }
+        .bio-info { font-size: 0.9em; color: #bd93f9; margin-bottom: 15px; }
+        
+        /* 底部时间轴控制台 */
+        #timeline-container {
+            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+            width: 80%; max-width: 800px; background: rgba(40, 42, 54, 0.9);
+            padding: 15px 30px; border-radius: 50px; box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+            display: flex; align-items: center; gap: 20px; border: 1px solid #6272a4;
+        }
+        #year-display {
+            font-size: 24px; font-weight: bold; color: #50fa7b; min-width: 120px; text-align: center;
+        }
+        input[type=range] {
+            flex-grow: 1; -webkit-appearance: none; background: transparent;
+        }
+        /* 滑块样式美化 */
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%; height: 8px; cursor: pointer; background: #44475a; border-radius: 4px;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            height: 24px; width: 24px; border-radius: 50%; background: #ffb86c;
+            cursor: pointer; -webkit-appearance: none; margin-top: -8px; box-shadow: 0 0 10px #ffb86c;
+        }
+    </style>
+</head>
+<body>
+
+<!-- 故事弹窗 -->
+<div id="story-panel">
+    <span class="close-btn" onclick="document.getElementById('story-panel').style.display='none'">✖</span>
+    <h3 id="panel-title">名字</h3>
+    <div class="bio-info" id="panel-bio">生卒年</div>
+    <div id="panel-content" style="line-height: 1.6; color: #f8f8f2;">点击节点查看历史事迹。</div>
+</div>
+
+<!-- 画布 -->
+<div id="mynetwork"></div>
+
+<!-- 时间轴 -->
+<div id="timeline-container">
+    <div id="year-display">拖动时间轴</div>
+    <input type="range" id="year-slider" min="-711" max="1912" value="1850">
+</div>
+
+<script>
+    // 1. 数据结构：必须包含 birth (出生年) 和 death (死亡年)
+    // 公元前使用负数，如 -711
+    const emperorsData = [
+        { id: "I001", name: "神武天皇", father: null, birth: -711, death: -585, story: "日本开国传说中的初代天皇。在位时长达76年，具有强烈的神话色彩。" },
+        { id: "I002", name: "绥靖天皇", father: "I001", birth: -632, death: -549, story: "神武天皇的次子。平定叛乱，巩固早期政权。" },
+        { id: "I003", name: "安宁天皇", father: "I002", birth: -577, death: -510, story: "第三代天皇。史书对其具体事迹记载极少。" },
+        
+        // 为了演示重叠时期，加入幕末至明治的数据
+        { id: "I120", name: "仁孝天皇", father: null, birth: 1800, death: 1846, story: "江户时代后期天皇。建立学习院的前身。" },
+        { id: "I121", name: "孝明天皇", father: "I120", birth: 1831, death: 1867, story: "幕末时期的关键天皇。面对黑船来航，坚决主张攘夷。" },
+        { id: "I122", name: "明治天皇", father: "I121", birth: 1852, death: 1912, story: "开启明治维新的伟大君主。推翻德川幕府，建立近代国家。" }
+    ];
+
+    // 默认样式与高亮样式
+    const styleNormal = { background: '#282a36', border: '#6272a4', fontColor: '#6272a4', borderWidth: 1 };
+    const styleAlive = { background: '#ff79c6', border: '#ffb86c', fontColor: '#282a36', borderWidth: 3, shadow: true };
+
+    // 2. 初始化节点
+    const nodes = new vis.DataSet(emperorsData.map(emp => ({
+        id: emp.id, 
+        label: emp.name, 
+        shape: 'box', 
+        margin: 12,
+        color: { background: styleNormal.background, border: styleNormal.border },
+        font: { color: styleNormal.fontColor, size: 16, face: 'Helvetica Neue' },
+        borderWidth: styleNormal.borderWidth
+    })));
+
+    const edges = new vis.DataSet(emperorsData.filter(emp => emp.father).map(emp => ({
+        from: emp.father, 
+        to: emp.id, 
+        arrows: "to",
+        color: { color: '#6272a4', opacity: 0.5 }
+    })));
+
+    // 3. 渲染网络图
+    const container = document.getElementById('mynetwork');
+    const network = new vis.Network(container, { nodes, edges }, {
+        layout: { hierarchical: { direction: 'UD', sortMethod: 'directed', levelSeparation: 120, nodeSpacing: 180 } },
+        physics: { enabled: false }, // 关闭物理引擎防止树状图乱动
+        interaction: { hover: true }
+    });
+
+    // 4. 点击弹出故事面板
+    network.on("click", function (params) {
+        if (params.nodes.length > 0) {
+            const nodeId = params.nodes[0];
+            const emp = emperorsData.find(e => e.id === nodeId);
+            
+            document.getElementById('panel-title').innerText = emp.name;
+            const bYear = emp.birth < 0 ? `公元前 ${Math.abs(emp.birth)}` : emp.birth;
+            const dYear = emp.death < 0 ? `公元前 ${Math.abs(emp.death)}` : emp.death;
+            document.getElementById('panel-bio').innerText = `生存年份: ${bYear} - ${dYear} 年`;
+            document.getElementById('panel-content').innerText = emp.story;
+            document.getElementById('story-panel').style.display = 'block';
+        }
+    });
+
+    // 5. 核心功能：时间轴动态高亮逻辑
+    const slider = document.getElementById('year-slider');
+    const display = document.getElementById('year-display');
+
+    function updateTimeline() {
+        const currentYear = parseInt(slider.value);
+        // 格式化年份显示
+        display.innerText = currentYear < 0 ? `公元前 ${Math.abs(currentYear)} 年` : `${currentYear} 年`;
+
+        // 遍历所有数据，判断在当前年份是否存活
+        const updates = emperorsData.map(emp => {
+            const isAlive = currentYear >= emp.birth && currentYear <= emp.death;
+            return {
+                id: emp.id,
+                color: { 
+                    background: isAlive ? styleAlive.background : styleNormal.background, 
+                    border: isAlive ? styleAlive.border : styleNormal.border 
+                },
+                font: { color: isAlive ? styleAlive.fontColor : styleNormal.fontColor },
+                borderWidth: isAlive ? styleAlive.borderWidth : styleNormal.borderWidth,
+                shadow: isAlive
+            };
+        });
+        
+        // 批量更新节点视图
+        nodes.update(updates);
+    }
+
+    // 监听滑块拖动事件
+    slider.addEventListener('input', updateTimeline);
+    
+    // 初始化执行一次，点亮默认年份的人物
+    updateTimeline();
+
+</script>
+
+</body>
+</html>
