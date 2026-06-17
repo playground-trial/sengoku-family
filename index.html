@@ -2,95 +2,110 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>动态时间轴天皇族谱</title>
-    <!-- 引入图表库 -->
+    <title>日本天皇历代族谱树 (含动态时间轴高亮与故事版)</title>
     <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
     <style>
-        body { margin: 0; background: #1e1e2f; font-family: 'Helvetica Neue', Arial, sans-serif; color: #fff; overflow: hidden; }
+        body { margin: 0; background: #1a1b26; font-family: 'Helvetica Neue', Arial, sans-serif; color: #fff; overflow: hidden; }
         
         /* 族谱画布 */
         #mynetwork { width: 100vw; height: 100vh; }
         
         /* 侧边故事面板 */
         #story-panel { 
-            position: fixed; right: 20px; top: 20px; width: 320px; 
-            background: rgba(40, 42, 54, 0.95); padding: 20px; 
-            box-shadow: 0 8px 32px rgba(0,0,0,0.5); border-radius: 12px; 
+            position: fixed; right: 20px; top: 20px; width: 340px; 
+            background: rgba(30, 32, 41, 0.96); padding: 25px; 
+            box-shadow: 0 10px 40px rgba(0,0,0,0.6); border-radius: 15px; 
             display: none; border: 1px solid #444; z-index: 100;
+            max-height: 80vh; overflow-y: auto;
         }
-        h3 { margin-top: 0; border-bottom: 2px solid #ff79c6; padding-bottom: 10px; color: #ff79c6; }
-        .close-btn { float: right; cursor: pointer; color: #aaa; font-size: 18px; }
+        h3 { margin-top: 0; border-bottom: 3px solid #ff79c6; padding-bottom: 12px; color: #ff79c6; font-size: 22px; }
+        .close-btn { float: right; cursor: pointer; color: #aaa; font-size: 20px; }
         .close-btn:hover { color: #fff; }
-        .bio-info { font-size: 0.9em; color: #bd93f9; margin-bottom: 15px; }
+        .bio-info { font-size: 0.95em; color: #bd93f9; margin-bottom: 20px; }
+        .bio-item { margin-bottom: 8px; }
         
         /* 底部时间轴控制台 */
         #timeline-container {
             position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
-            width: 80%; max-width: 800px; background: rgba(40, 42, 54, 0.9);
-            padding: 15px 30px; border-radius: 50px; box-shadow: 0 4px 20px rgba(0,0,0,0.6);
-            display: flex; align-items: center; gap: 20px; border: 1px solid #6272a4;
+            width: 85%; max-width: 900px; background: rgba(30, 32, 41, 0.95);
+            padding: 18px 35px; border-radius: 60px; box-shadow: 0 5px 30px rgba(0,0,0,0.7);
+            display: flex; align-items: center; gap: 25px; border: 1px solid #6272a4; z-index: 90;
         }
         #year-display {
-            font-size: 24px; font-weight: bold; color: #50fa7b; min-width: 120px; text-align: center;
+            font-size: 26px; font-weight: bold; color: #50fa7b; min-width: 140px; text-align: center; font-variant-numeric: tabular-nums;
         }
         input[type=range] {
-            flex-grow: 1; -webkit-appearance: none; background: transparent;
+            flex-grow: 1; -webkit-appearance: none; background: transparent; cursor: pointer;
         }
         /* 滑块样式美化 */
         input[type=range]::-webkit-slider-runnable-track {
-            width: 100%; height: 8px; cursor: pointer; background: #44475a; border-radius: 4px;
+            width: 100%; height: 10px; background: #44475a; border-radius: 5px;
         }
         input[type=range]::-webkit-slider-thumb {
-            height: 24px; width: 24px; border-radius: 50%; background: #ffb86c;
-            cursor: pointer; -webkit-appearance: none; margin-top: -8px; box-shadow: 0 0 10px #ffb86c;
+            height: 26px; width: 26px; border-radius: 50%; background: #ffb86c;
+            -webkit-appearance: none; margin-top: -8px; box-shadow: 0 0 15px rgba(255,184,108,0.7);
+            transition: all 0.1s ease;
         }
+        input[type=range]::-webkit-slider-thumb:hover { background: #ffcb8a; transform: scale(1.1); }
     </style>
 </head>
 <body>
 
-<!-- 故事弹窗 -->
 <div id="story-panel">
     <span class="close-btn" onclick="document.getElementById('story-panel').style.display='none'">✖</span>
-    <h3 id="panel-title">名字</h3>
-    <div class="bio-info" id="panel-bio">生卒年</div>
-    <div id="panel-content" style="line-height: 1.6; color: #f8f8f2;">点击节点查看历史事迹。</div>
+    <h3 id="panel-title">天皇姓名</h3>
+    <div class="bio-info" id="panel-bio">
+        <div class="bio-item">ID: <span id="panel-id" style="color:#eee">Ixxx</span></div>
+        <div class="bio-item">代数: <span id="panel-generation" style="color:#eee">122代</span></div>
+        <div class="bio-item">生存日期: <span id="panel-dates" style="color:#eee">yyyy - yyyy 年</span></div>
+    </div>
+    <div id="panel-content" style="line-height: 1.7; color: #f8f8f2; font-size: 1.05em; border-top: 1px solid #444; padding-top: 15px;">点击节点即可查看更多历史事迹。</div>
 </div>
 
-<!-- 画布 -->
 <div id="mynetwork"></div>
 
-<!-- 时间轴 -->
 <div id="timeline-container">
     <div id="year-display">拖动时间轴</div>
     <input type="range" id="year-slider" min="-711" max="1912" value="1850">
 </div>
 
 <script>
-    // 1. 数据结构：必须包含 birth (出生年) 和 death (死亡年)
-    // 公元前使用负数，如 -711
+    // =========================================================================
+    // 🌸 第一部分：122 位天皇完整核心数据区 (您的大工程就在这里进行！) 🌸
+    // ID 建议按顺序排，Father 必须对应父辈的 ID。
+    // birth (出生年) 和 death (死亡年) 是滑块动态高亮的关键，公元前填负数。
+    // =========================================================================
     const emperorsData = [
-        { id: "I001", name: "神武天皇", father: null, birth: -711, death: -585, story: "日本开国传说中的初代天皇。在位时长达76年，具有强烈的神话色彩。" },
-        { id: "I002", name: "绥靖天皇", father: "I001", birth: -632, death: -549, story: "神武天皇的次子。平定叛乱，巩固早期政权。" },
-        { id: "I003", name: "安宁天皇", father: "I002", birth: -577, death: -510, story: "第三代天皇。史书对其具体事迹记载极少。" },
-        
-        // 为了演示重叠时期，加入幕末至明治的数据
-        { id: "I120", name: "仁孝天皇", father: null, birth: 1800, death: 1846, story: "江户时代后期天皇。建立学习院的前身。" },
-        { id: "I121", name: "孝明天皇", father: "I120", birth: 1831, death: 1867, story: "幕末时期的关键天皇。面对黑船来航，坚决主张攘夷。" },
-        { id: "I122", name: "明治天皇", father: "I121", birth: 1852, death: 1912, story: "开启明治维新的伟大君主。推翻德川幕府，建立近代国家。" }
+        { id: "I001", gen: 1, name: "神武天皇", father: null, birth: -711, death: -585, story: "日本开国传说中的初代天皇。据《日本书纪》记载在位时长达76年，具有强烈的神话色彩。东征神话的核心人物。" },
+        { id: "I002", gen: 2, name: "绥靖天皇", father: "I001", birth: -632, death: -549, story: "神武天皇的次子。平定了当摩彦的叛乱，巩固了早期政权。属于“欠史八代”之一。" },
+        { id: "I003", gen: 3, name: "安宁天皇", father: "I002", birth: -577, death: -510, story: "第三代天皇。史书对其具体事迹记载极少，主要记录了其宫殿迁移与家族联姻。" },
+        { id: "I004", gen: 4, name: "懿德天皇", father: "I003", birth: -554, death: -477, story: "第四代天皇。在位期间风调雨顺，无重大事迹记载。" },
+        // ... 请您以此类推，继续录入第5代至第121代 ...
+        // 为了演示高亮效果，我加入了幕末至明治的数据作为锚点
+        { id: "I120", gen: 120, name: "仁孝天皇", father: null, birth: 1800, death: 1846, story: "江户时代后期天皇。面对内忧外患，主张“开国攘夷”思想。建立学习院的前身，倡导学术。" },
+        { id: "I121", gen: 121, name: "孝明天皇", father: "I120", birth: 1831, death: 1867, story: "幕末时期的关键天皇。面对黑船来航与西方列强的冲击，坚决主张攘夷。在朝廷与幕府的权力博弈中扮演了核心角色。" },
+        { id: "I122", gen: 122, name: "明治天皇", father: "I121", birth: 1852, death: 1912, story: "开启明治维新的伟大君主。推翻了德川幕府统治，将日本从一个封建落后的国家转型为近代工业化强国。他的统治时期被视为日本近代化的起点。" }
     ];
 
-    // 默认样式与高亮样式
-    const styleNormal = { background: '#282a36', border: '#6272a4', fontColor: '#6272a4', borderWidth: 1 };
+    // =========================================================================
+    // 样式定义区
+    // =========================================================================
+    // 默认样式 (幽灵暗色)
+    const styleNormal = { background: '#21222c', border: '#44475a', fontColor: '#6272a4', borderWidth: 1 };
+    // 高亮样式 (点亮，活着状态)
     const styleAlive = { background: '#ff79c6', border: '#ffb86c', fontColor: '#282a36', borderWidth: 3, shadow: true };
 
-    // 2. 初始化节点
+    // =========================================================================
+    // 图表生成逻辑区
+    // =========================================================================
+    // 1. 初始化节点和连线
     const nodes = new vis.DataSet(emperorsData.map(emp => ({
         id: emp.id, 
         label: emp.name, 
         shape: 'box', 
-        margin: 12,
+        margin: 14,
         color: { background: styleNormal.background, border: styleNormal.border },
-        font: { color: styleNormal.fontColor, size: 16, face: 'Helvetica Neue' },
+        font: { color: styleNormal.fontColor, size: 17, face: 'Helvetica Neue' },
         borderWidth: styleNormal.borderWidth
     })));
 
@@ -98,33 +113,39 @@
         from: emp.father, 
         to: emp.id, 
         arrows: "to",
-        color: { color: '#6272a4', opacity: 0.5 }
+        color: { color: '#6272a4', opacity: 0.6 }
     })));
 
-    // 3. 渲染网络图
+    // 2. 渲染网络图
     const container = document.getElementById('mynetwork');
     const network = new vis.Network(container, { nodes, edges }, {
-        layout: { hierarchical: { direction: 'UD', sortMethod: 'directed', levelSeparation: 120, nodeSpacing: 180 } },
-        physics: { enabled: false }, // 关闭物理引擎防止树状图乱动
-        interaction: { hover: true }
+        // 使用分层布局 ( Hierarchical Layout ) 实现完美的树状结构
+        layout: { hierarchical: { direction: 'UD', sortMethod: 'directed', levelSeparation: 130, nodeSpacing: 200 } },
+        physics: { enabled: false }, // 关闭物理引擎，确保树形整齐
+        interaction: { hover: true, tooltipDelay: 150 }
     });
 
-    // 4. 点击弹出故事面板
+    // 3. 点击节点弹出故事面板
     network.on("click", function (params) {
         if (params.nodes.length > 0) {
             const nodeId = params.nodes[0];
             const emp = emperorsData.find(e => e.id === nodeId);
             
             document.getElementById('panel-title').innerText = emp.name;
+            document.getElementById('panel-id').innerText = emp.id;
+            document.getElementById('panel-generation').innerText = `${emp.gen}代`;
+            
             const bYear = emp.birth < 0 ? `公元前 ${Math.abs(emp.birth)}` : emp.birth;
             const dYear = emp.death < 0 ? `公元前 ${Math.abs(emp.death)}` : emp.death;
-            document.getElementById('panel-bio').innerText = `生存年份: ${bYear} - ${dYear} 年`;
-            document.getElementById('panel-content').innerText = emp.story;
+            document.getElementById('panel-dates').innerText = `${bYear} - ${dYear} 年`;
+            document.getElementById('panel-content').innerHTML = emp.story;
             document.getElementById('story-panel').style.display = 'block';
         }
     });
 
-    // 5. 核心功能：时间轴动态高亮逻辑
+    // =========================================================================
+    // 核心动态功能区：时间轴与高亮逻辑
+    // =========================================================================
     const slider = document.getElementById('year-slider');
     const display = document.getElementById('year-display');
 
@@ -133,9 +154,11 @@
         // 格式化年份显示
         display.innerText = currentYear < 0 ? `公元前 ${Math.abs(currentYear)} 年` : `${currentYear} 年`;
 
-        // 遍历所有数据，判断在当前年份是否存活
+        // 批量更新节点视图
         const updates = emperorsData.map(emp => {
+            // 判断在该年份是否活着 (处于 birth 和 death 之间)
             const isAlive = currentYear >= emp.birth && currentYear <= emp.death;
+            
             return {
                 id: emp.id,
                 color: { 
@@ -148,14 +171,13 @@
             };
         });
         
-        // 批量更新节点视图
         nodes.update(updates);
     }
 
     // 监听滑块拖动事件
     slider.addEventListener('input', updateTimeline);
     
-    // 初始化执行一次，点亮默认年份的人物
+    // 初始化执行一次，点亮滑块默认年份的人物
     updateTimeline();
 
 </script>
